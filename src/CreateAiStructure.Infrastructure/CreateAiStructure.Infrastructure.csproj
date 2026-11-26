@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CreateAiStructure.Application\CreateAiStructure.Application.csproj" />
+  </ItemGroup>
+
+</Project>

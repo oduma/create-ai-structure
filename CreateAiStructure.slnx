@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CreateAiStructure.Application/CreateAiStructure.Application.csproj" />
+    <Project Path="src/CreateAiStructure.Cli/CreateAiStructure.Cli.csproj" />
+    <Project Path="src/CreateAiStructure.Domain/CreateAiStructure.Domain.csproj" />
+    <Project Path="src/CreateAiStructure.Infrastructure/CreateAiStructure.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CreateAiStructure.Application.Tests/CreateAiStructure.Application.Tests.csproj" />
+    <Project Path="tests/CreateAiStructure.Cli.Tests/CreateAiStructure.Cli.Tests.csproj" />
+    <Project Path="tests/CreateAiStructure.Domain.Tests/CreateAiStructure.Domain.Tests.csproj" />
+    <Project Path="tests/CreateAiStructure.Infrastructure.Tests/CreateAiStructure.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>
