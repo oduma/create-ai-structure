@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Coverage gate (coverlet.msbuild)">
+    <CollectCoverage>true</CollectCoverage>
+    <ThresholdType>branch</ThresholdType>
+    <Threshold>100</Threshold>
+    <!-- coverlet silently drops filter expressions containing "-" (which would measure every module), so the
+         hyphenated CLI module is matched with a wildcard and the case-insensitive overlap with the layer assemblies is excluded. -->
+    <Include>[create*structure]*</Include>
+    <Exclude>[CreateAiStructure.*]*</Exclude>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <CoverletOutput>$(MSBuildProjectDirectory)/bin/coverage/</CoverletOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
+    <PackageReference Include="FluentAssertions" Version="7.2.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\CreateAiStructure.Domain.Tests\TestSupport\**\*.cs" LinkBase="TestSupport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CreateAiStructure.Cli\CreateAiStructure.Cli.csproj" />
+  </ItemGroup>
+
+</Project>
