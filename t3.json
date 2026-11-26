@@ -1,0 +1,17 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "scripts": [
+    {
+      "name": "Setup Worktree",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-worktree.ps1",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
+    },
+    {
+      "name": "Test",
+      "command": "dotnet test",
+      "icon": "test"
+    }
+  ]
+}
