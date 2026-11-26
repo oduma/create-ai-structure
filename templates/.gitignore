@@ -1,0 +1,14 @@
+# DepViz local runtime state
+.depviz/state.db
+.depviz/cache/
+.depviz/sync/
+
+# .NET & IDE
+bin/
+obj/
+.vs/
+*.user
+
+# Local secrets & overrides
+.env
+appsettings.Development.json

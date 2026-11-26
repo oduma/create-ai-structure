@@ -1,0 +1,7 @@
+{
+  "max_active_epics": 4,
+  "max_concurrent_po_specs": 2,
+  "gate_after_po_spec": true,
+  "gate_after_architect_plan": true,
+  "enable_playwright_qa": false
+}
