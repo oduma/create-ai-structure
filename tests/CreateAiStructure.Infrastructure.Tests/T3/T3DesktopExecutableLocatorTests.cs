@@ -100,6 +100,10 @@ public class T3DesktopExecutableLocatorTests
         "C:/x/../t3.exe",
         "\"",
         "\"\"",
+        @"\\server\share\T3 Code.exe",
+        @"\\?\C:\T3 Code.exe",
+        "C:\\Tools\\T3 Code.exe\" --evil",
+        @"C:\Tools\T3 Code.exe:ads",
     };
 
     public static TheoryData<string?> InvalidBasePaths => new()
@@ -152,7 +156,8 @@ public class T3DesktopExecutableLocatorTests
     [InlineData(@"C:\Tools\T3 Code\T3 Code.exe", @"C:\Tools\T3 Code\T3 Code.exe")]
     [InlineData("  \"C:\\Tools\\T3 Code\\T3 Code.exe\"  ", @"C:\Tools\T3 Code\T3 Code.exe")]
     [InlineData("\"  C:\\Tools\\T3 Code\\T3 Code.exe  \"", @"C:\Tools\T3 Code\T3 Code.exe")]
-    [InlineData(@"\\server\share\T3 Code.exe", @"\\server\share\T3 Code.exe")]
+    // UNC overrides are intentionally rejected (security policy): probing a network share can leak
+    // NTLM credentials, so the former \\server\share case now lives in InvalidOverrides.
     public void Locate_ValidExistingOverride_ReturnsOverrideWithoutProbingDirectories(string rawOverride, string expected)
     {
         UseStandardBases();

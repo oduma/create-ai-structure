@@ -25,6 +25,14 @@ public class DetachedProcessLauncherTests
         @".\t3.exe",
         @"C:\a\..\b.exe",
         "C:/a/../b.exe",
+        "C:\\a.exe\" --evil",
+        "C:\\a\\b.exe\0",
+        @"\\server\share\t3.exe",
+        "//server/share/t3.exe",
+        @"\\?\C:\t3.exe",
+        @"\\.\C:\t3.exe",
+        @"\\?\UNC\server\share\t3.exe",
+        @"C:\a\b.exe:ads",
     };
 
     public static TheoryData<string?> BlankWorkingDirectories => new()
