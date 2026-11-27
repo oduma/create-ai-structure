@@ -24,10 +24,10 @@ public sealed class DetachedProcessLauncher : IDetachedProcessLauncher
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DetachedProcessLauncher"/> class that starts
-    /// processes through <see cref="Process.Start(ProcessStartInfo)"/>.
+    /// processes through <see cref="System.Diagnostics.Process.Start(ProcessStartInfo)"/>.
     /// </summary>
     public DetachedProcessLauncher()
-        : this(static startInfo => Process.Start(startInfo))
+        : this(static startInfo => System.Diagnostics.Process.Start(startInfo))
     {
     }
 
