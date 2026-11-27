@@ -2,7 +2,6 @@ using CreateAiStructure.Application.Provisioning;
 using CreateAiStructure.Application.Runtime;
 using CreateAiStructure.Domain.Common;
 using CreateAiStructure.Domain.Scaffolding;
-using CreateAiStructure.Domain.Workflow;
 using CreateAiStructure.Infrastructure.Provisioning;
 using FluentAssertions;
 using NSubstitute;
@@ -364,16 +363,5 @@ public class RepositoryBootstrapperCreateAndCloneTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await _runner.DidNotReceive().RunAsync(IsRemote(), Arg.Any<CancellationToken>());
-    }
-
-    // ----- FinalizeRepositoryAsync placeholder (replaced by P3.5 / #19) -------------------
-
-    [Fact]
-    public async Task FinalizeRepositoryAsync_is_not_implemented_yet()
-    {
-        var act = () => CreateSut().FinalizeRepositoryAsync(RepositoryDirectory, Array.Empty<WorkflowLabelDefinition>());
-
-        await act.Should().ThrowAsync<NotImplementedException>();
-        ShouldNotHaveRunAnything();
     }
 }

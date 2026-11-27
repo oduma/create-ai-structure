@@ -8,7 +8,8 @@ namespace CreateAiStructure.Infrastructure.Provisioning;
 
 /// <summary>
 /// Creates the GitHub repository with the <c>gh</c> CLI, clones it, normalises its default branch to <c>main</c>
-/// and resolves its <c>owner/repo</c> slug. Every step fails fast with a structured <see cref="DomainError"/>.
+/// and resolves its <c>owner/repo</c> slug; after scaffolding it initializes depviz, creates the workflow labels and
+/// commits and pushes the initial structure. Every step fails fast with a structured <see cref="DomainError"/>.
 /// </summary>
 public sealed class RepositoryBootstrapper : IRepositoryBootstrapper
 {
@@ -18,6 +19,12 @@ public sealed class RepositoryBootstrapper : IRepositoryBootstrapper
     private const string DefaultBranchStep = "git branch -M main";
     private const string RemoteOriginStep = "git remote get-url origin";
     private const string EmptyPlaceholder = "<empty>";
+    private const string DepvizTool = "depviz";
+    private const string DepvizInitStep = "depviz init";
+    private const string GitAddStep = "git add --all";
+    private const string GitCommitStep = "git commit";
+    private const string GitPushStep = "git push -u origin main";
+    private const string InitialCommitMessage = "chore: initialize AI workflow structure";
 
     private readonly IProcessRunner _processRunner;
     private readonly IFileSystem _fileSystem;
@@ -106,13 +113,80 @@ public sealed class RepositoryBootstrapper : IRepositoryBootstrapper
     }
 
     /// <inheritdoc />
-    /// <exception cref="NotImplementedException">Always; finalization is implemented by a later sub-issue (P3.5).</exception>
-    public Task<Result> FinalizeRepositoryAsync(
+    /// <remarks>
+    /// Runs, in order and fail-fast, inside <paramref name="repositoryDirectory"/>: <c>depviz init</c>, one
+    /// <c>gh label create</c> per label (input order), <c>git add --all</c>, the initial <c>git commit</c> and
+    /// <c>git push -u origin main</c>. The first non-zero exit code stops the pipeline and is reported as a failure.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="repositoryDirectory"/> is null, empty or whitespace, or <paramref name="labels"/> contains a
+    /// <see langword="null"/> element.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="labels"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    public async Task<Result> FinalizeRepositoryAsync(
         string repositoryDirectory,
         IReadOnlyList<WorkflowLabelDefinition> labels,
-        CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Repository finalization is not implemented yet.");
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(repositoryDirectory);
+        ArgumentNullException.ThrowIfNull(labels);
+        foreach (var label in labels)
+        {
+            if (label is null)
+            {
+                throw new ArgumentException("The label list must not contain null elements.", nameof(labels));
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_fileSystem.DirectoryExists(repositoryDirectory))
+        {
+            return Result.Failure(new DomainError(
+                ProvisioningErrorCodes.RepositoryDirectoryNotFound,
+                $"The repository directory '{repositoryDirectory}' does not exist."));
+        }
+
+        foreach (var step in BuildFinalizeSteps(labels))
+        {
+            var outcome = await _processRunner.RunAsync(
+                new ProcessExecutionRequest(step.FileName, step.Arguments, repositoryDirectory),
+                cancellationToken).ConfigureAwait(false);
+            if (!outcome.Succeeded)
+            {
+                return Result.Failure(new DomainError(step.ErrorCode, SubprocessDiagnostics.Describe(step.Description, outcome)));
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static List<FinalizeStep> BuildFinalizeSteps(IReadOnlyList<WorkflowLabelDefinition> labels)
+    {
+        List<FinalizeStep> steps = [new(DepvizTool, ["init"], ProvisioningErrorCodes.DepvizInitFailed, DepvizInitStep)];
+        foreach (var label in labels)
+        {
+            steps.Add(new FinalizeStep(
+                GhTool,
+                ["label", "create", "--color", label.ColorHex, "--description", label.Description, "--force", "--", label.Name],
+                ProvisioningErrorCodes.LabelCreateFailed,
+                $"gh label create for label '{label.Name}'"));
+        }
+
+        steps.Add(new FinalizeStep(GitTool, ["add", "--all"], ProvisioningErrorCodes.GitAddFailed, GitAddStep));
+        steps.Add(new FinalizeStep(GitTool, ["commit", "-m", InitialCommitMessage], ProvisioningErrorCodes.GitCommitFailed, GitCommitStep));
+        steps.Add(new FinalizeStep(GitTool, ["push", "-u", "origin", "main"], ProvisioningErrorCodes.GitPushFailed, GitPushStep));
+        return steps;
+    }
 
     private static Result<RepositoryCloneResult> Fail(string code, string message) =>
         Result<RepositoryCloneResult>.Failure(new DomainError(code, message));
+
+    /// <summary>One external command of the finalization pipeline and how its failure is reported.</summary>
+    /// <param name="FileName">The executable to run.</param>
+    /// <param name="Arguments">The argument list passed verbatim to the executable.</param>
+    /// <param name="ErrorCode">The <see cref="ProvisioningErrorCodes"/> value reported when the command fails.</param>
+    /// <param name="Description">The human-readable step name used in the FR-6 diagnostic message.</param>
+    private sealed record FinalizeStep(string FileName, IReadOnlyList<string> Arguments, string ErrorCode, string Description);
 }
