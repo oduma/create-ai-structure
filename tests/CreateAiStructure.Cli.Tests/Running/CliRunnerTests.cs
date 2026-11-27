@@ -220,15 +220,30 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task Other_exceptions_propagate_without_output()
+    public async Task Unexpected_orchestrator_exception_is_reported_without_a_stack_trace_and_returns_execution_failure()
     {
         _orchestrator.ExecuteAsync(Arg.Any<ScaffoldRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var act = () => _runner.RunAsync(ScaffoldArgs);
+        var exitCode = await _runner.RunAsync(ScaffoldArgs);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+        exitCode.Should().Be(CliExitCodes.ExecutionFailure);
+        _error.ToString().Should().Be(Lines("Error [Cli.UnexpectedError]: An unexpected error occurred: boom"));
         _out.ToString().Should().BeEmpty();
-        _error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Unexpected_exception_while_parsing_is_reported_and_returns_execution_failure()
+    {
+        var environment = Substitute.For<IEnvironmentProvider>();
+        environment.GetCurrentDirectory().Throws(new IOException("cwd gone"));
+        var runner = new CliRunner(new CliArgumentParser(environment), _orchestrator, new ConsoleStreams(_out, _error));
+
+        var exitCode = await runner.RunAsync(ScaffoldArgs);
+
+        exitCode.Should().Be(CliExitCodes.ExecutionFailure);
+        _error.ToString().Should().Be(Lines($"Error [{CliErrorCodes.UnexpectedError}]: An unexpected error occurred: cwd gone"));
+        _out.ToString().Should().BeEmpty();
+        _orchestrator.ReceivedCalls().Should().BeEmpty();
     }
 }

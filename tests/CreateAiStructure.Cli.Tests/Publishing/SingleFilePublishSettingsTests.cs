@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using CreateAiStructure.Tests.Shared;
 using FluentAssertions;
 
@@ -18,6 +19,18 @@ public class SingleFilePublishSettingsTests
     [InlineData("DebugType", "embedded")]
     public void Cli_project_declares_the_single_file_publish_property(string name, string expected) =>
         CliProject.Property(name).Should().Be(expected);
+
+    [Fact]
+    public void Release_builds_map_the_repository_root_so_embedded_symbols_carry_no_local_paths()
+    {
+        var project = XDocument.Load(
+            Path.Combine(ProjectFile.RepositoryRoot, "src", "CreateAiStructure.Cli", "CreateAiStructure.Cli.csproj"));
+        var pathMap = project.Descendants("PropertyGroup").Elements("PathMap").SingleOrDefault();
+
+        pathMap.Should().NotBeNull();
+        pathMap!.Value.Trim().Should().Be(@"$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))=/_/");
+        ((string?)pathMap.Parent!.Attribute("Condition")).Should().Be("'$(Configuration)' == 'Release'");
+    }
 
     [Theory]
     [InlineData("RuntimeIdentifier")]

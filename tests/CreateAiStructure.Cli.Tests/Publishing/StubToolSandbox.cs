@@ -3,9 +3,9 @@ using System.Text;
 namespace CreateAiStructure.Cli.Tests.Publishing;
 
 /// <summary>
-/// An isolated temp tree for one real scaffold run of the published executable: a <c>shims</c> directory of offline
+/// An isolated temp tree for one real run of the published executable: a <c>shims</c> directory of offline
 /// <c>.cmd</c> stand-ins for <c>git</c>, <c>gh</c>, <c>depviz</c> and <c>t3</c>, an empty <c>work</c> directory used as
-/// the current directory and an empty <c>localappdata</c> directory used for the install-location variables.
+/// the current directory, and empty sandbox directories used for the install-location and <c>gh</c> config variables.
 /// </summary>
 /// <remarks>
 /// The shims make zero network calls: <c>gh repo create ... -- &lt;name&gt;</c> creates <c>&lt;cwd&gt;/&lt;name&gt;</c>,
@@ -41,6 +41,10 @@ internal sealed class StubToolSandbox : IDisposable
         ShimDirectory = _root.CreateSubdirectory("shims");
         WorkingDirectory = _root.CreateSubdirectory("work");
         LocalApplicationDataDirectory = _root.CreateSubdirectory("localappdata");
+        ProgramFilesDirectory = _root.CreateSubdirectory("programfiles");
+        ProgramFilesX86Directory = _root.CreateSubdirectory("programfiles-x86");
+        GhConfigDirectory = _root.CreateSubdirectory("gh-config");
+        MissingT3DesktopExecutable = Path.Combine(_root.FullPath, "missing", "T3 Code.exe");
 
         WriteShim("gh", GhShim);
         WriteShim("git", GitShim);
@@ -57,9 +61,23 @@ internal sealed class StubToolSandbox : IDisposable
     /// <summary>Gets the empty directory used as <c>LOCALAPPDATA</c>.</summary>
     public string LocalApplicationDataDirectory { get; }
 
+    /// <summary>Gets the empty directory used as <c>ProgramFiles</c>.</summary>
+    public string ProgramFilesDirectory { get; }
+
+    /// <summary>Gets the empty directory used as <c>ProgramFiles(x86)</c>.</summary>
+    public string ProgramFilesX86Directory { get; }
+
+    /// <summary>Gets the empty directory used as <c>GH_CONFIG_DIR</c>, so no real <c>gh</c> login is ever read.</summary>
+    public string GhConfigDirectory { get; }
+
+    /// <summary>Gets a non-existent sandbox path used as <c>T3CODE_DESKTOP_EXE</c>.</summary>
+    public string MissingT3DesktopExecutable { get; }
+
     /// <summary>
     /// Gets the environment overrides for the run: <c>PATH</c> limited to the shims and <c>%SystemRoot%\System32</c>
-    /// (for <c>cmd.exe</c>), Windows <c>PATHEXT</c>, no T3 desktop override, and the empty directory as
+    /// (for <c>cmd.exe</c>), Windows <c>PATHEXT</c>, every GitHub credential/host variable removed, <c>GH_CONFIG_DIR</c>
+    /// pointing at an empty sandbox directory, <c>T3CODE_DESKTOP_EXE</c> pointing at a non-existent sandbox file (the
+    /// locator honours an existing override first, so this neutralises any real one), and empty sandbox directories as
     /// <c>LOCALAPPDATA</c>, <c>ProgramFiles</c> and <c>ProgramFiles(x86)</c>.
     /// </summary>
     /// <remarks>
@@ -73,9 +91,15 @@ internal sealed class StubToolSandbox : IDisposable
         ["PATH"] = $"{ShimDirectory};{System.Environment.GetFolderPath(System.Environment.SpecialFolder.System)}",
         ["PATHEXT"] = ".COM;.EXE;.BAT;.CMD",
         ["LOCALAPPDATA"] = LocalApplicationDataDirectory,
-        ["ProgramFiles"] = LocalApplicationDataDirectory,
-        ["ProgramFiles(x86)"] = LocalApplicationDataDirectory,
-        ["T3CODE_DESKTOP_EXE"] = null,
+        ["ProgramFiles"] = ProgramFilesDirectory,
+        ["ProgramFiles(x86)"] = ProgramFilesX86Directory,
+        ["T3CODE_DESKTOP_EXE"] = MissingT3DesktopExecutable,
+        ["GH_CONFIG_DIR"] = GhConfigDirectory,
+        ["GH_TOKEN"] = null,
+        ["GITHUB_TOKEN"] = null,
+        ["GH_ENTERPRISE_TOKEN"] = null,
+        ["GITHUB_ENTERPRISE_TOKEN"] = null,
+        ["GH_HOST"] = null,
     };
 
     public void Dispose() => _root.Dispose();

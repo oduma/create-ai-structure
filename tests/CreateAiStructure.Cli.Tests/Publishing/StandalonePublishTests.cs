@@ -86,15 +86,9 @@ public sealed class StandalonePublishTests : IClassFixture<StandalonePublishFixt
     [WindowsOnlyFact]
     public async Task Scaffold_run_against_offline_tool_shims_materializes_every_template()
     {
-        RequirePublishedExecutable();
         using var sandbox = new StubToolSandbox();
 
-        var result = await ExternalProcess.RunAsync(
-            _fixture.ExecutablePath,
-            ["--type", "webApp", "--repo", RepositoryName],
-            sandbox.WorkingDirectory,
-            RunTimeout,
-            sandbox.Environment);
+        var result = await RunExecutableAsync(["--type", "webApp", "--repo", RepositoryName], sandbox);
 
         result.ExitCode.Should().Be(CliExitCodes.Success, "{0}", result.Describe());
         result.StandardOutput.Should().Contain(T3AppLauncher.ImportReminderMessage, "{0}", result.Describe());
@@ -114,14 +108,24 @@ public sealed class StandalonePublishTests : IClassFixture<StandalonePublishFixt
 
     private async Task<ExternalProcessResult> RunExecutableAsync(IReadOnlyList<string> arguments)
     {
+        using var sandbox = new StubToolSandbox();
+        return await RunExecutableAsync(arguments, sandbox);
+    }
+
+    /// <summary>
+    /// Every invocation runs inside a <see cref="StubToolSandbox"/>: shim-only <c>PATH</c>, no GitHub credentials, sandboxed
+    /// <c>gh</c> config and install directories, and a non-existent T3 desktop override, never the developer's real environment.
+    /// </summary>
+    private async Task<ExternalProcessResult> RunExecutableAsync(IReadOnlyList<string> arguments, StubToolSandbox sandbox)
+    {
         RequirePublishedExecutable();
 
         return await ExternalProcess.RunAsync(
             _fixture.ExecutablePath,
             arguments,
-            _fixture.CreateTemporaryDirectory("cwd"),
+            sandbox.WorkingDirectory,
             RunTimeout,
-            new Dictionary<string, string?> { ["LOCALAPPDATA"] = _fixture.CreateTemporaryDirectory("localappdata") });
+            sandbox.Environment);
     }
 
     private void RequirePublishedExecutable() =>

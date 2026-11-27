@@ -1,8 +1,11 @@
 namespace CreateAiStructure.Cli.Parsing;
 
-/// <summary>Stable, machine-readable error codes produced by <see cref="CliArgumentParser"/>.</summary>
+/// <summary>Stable, machine-readable error codes produced by the CLI layer.</summary>
 public static class CliErrorCodes
 {
+    /// <summary>An unexpected exception escaped the run; reported without a stack trace.</summary>
+    public const string UnexpectedError = "Cli.UnexpectedError";
+
     /// <summary>No arguments were supplied at all.</summary>
     public const string MissingRequiredOptions = "Cli.MissingRequiredOptions";
 

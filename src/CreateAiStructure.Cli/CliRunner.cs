@@ -1,6 +1,7 @@
 using CreateAiStructure.Application.Orchestration;
 using CreateAiStructure.Cli.ConsoleIo;
 using CreateAiStructure.Cli.Parsing;
+using CreateAiStructure.Domain.Common;
 
 namespace CreateAiStructure.Cli;
 
@@ -9,7 +10,9 @@ namespace CreateAiStructure.Cli;
 /// </summary>
 /// <remarks>
 /// Help and version write to stdout and never invoke the orchestrator; parse and orchestration failures write to stderr.
-/// Only <see cref="OperationCanceledException"/> is caught; every other exception propagates.
+/// Any <see cref="OperationCanceledException"/> maps to <see cref="CliExitCodes.Cancelled"/>; every other exception is a
+/// last-chance <c>Cli.UnexpectedError</c> written to stderr (message only, no stack trace) with
+/// <see cref="CliExitCodes.ExecutionFailure"/>. Null-argument guards still throw.
 /// </remarks>
 public sealed class CliRunner
 {
@@ -50,6 +53,12 @@ public sealed class CliRunner
         {
             _streams.Error.WriteLine(CliOutputFormatter.CancelledMessage);
             return CliExitCodes.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            var error = new DomainError(CliErrorCodes.UnexpectedError, $"An unexpected error occurred: {ex.Message}");
+            _streams.Error.WriteLine(CliOutputFormatter.FormatError(error));
+            return CliExitCodes.ExecutionFailure;
         }
     }
 
