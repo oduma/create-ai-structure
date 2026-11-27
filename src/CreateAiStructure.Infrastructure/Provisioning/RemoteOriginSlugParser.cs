@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace CreateAiStructure.Infrastructure.Provisioning;
 
 /// <summary>
@@ -7,6 +9,9 @@ namespace CreateAiStructure.Infrastructure.Provisioning;
 internal static class RemoteOriginSlugParser
 {
     private const string GitSuffix = ".git";
+
+    private static readonly SearchValues<char> AllowedSegmentCharacters =
+        SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-");
 
     /// <summary>Attempts to extract the <c>owner/repo</c> slug from a remote URL.</summary>
     /// <param name="remoteUrl">The raw remote URL, for example the output of <c>git remote get-url origin</c>.</param>
@@ -37,7 +42,7 @@ internal static class RemoteOriginSlugParser
 
         // Leading/trailing slashes are trimmed, so an empty segment always yields more than two segments.
         var segments = path.Split('/');
-        if (segments.Length != 2 || path.Any(char.IsWhiteSpace))
+        if (segments.Length != 2 || !IsValidSegment(segments[0]) || !IsValidSegment(segments[1]))
         {
             return false;
         }
@@ -45,6 +50,15 @@ internal static class RemoteOriginSlugParser
         slug = $"{segments[0]}/{segments[1]}";
         return true;
     }
+
+    /// <summary>
+    /// An owner or repository name: only ASCII letters, digits, <c>.</c>, <c>_</c> and <c>-</c>; never starting
+    /// with <c>-</c> (option injection) and never a <c>.</c>/<c>..</c> path segment. Never empty (see above).
+    /// </summary>
+    private static bool IsValidSegment(string segment) =>
+        !segment.StartsWith('-')
+        && segment is not ("." or "..")
+        && !segment.AsSpan().ContainsAnyExcept(AllowedSegmentCharacters);
 
     private static string? ExtractPath(string remote)
     {

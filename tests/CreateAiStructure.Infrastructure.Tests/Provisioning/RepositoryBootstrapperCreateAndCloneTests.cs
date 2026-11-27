@@ -309,6 +309,53 @@ public class RepositoryBootstrapperCreateAndCloneTests
         result.Error.Message.Should().NotContain("<empty>");
     }
 
+    [Fact]
+    public async Task RemoteOriginInvalid_message_redacts_userinfo_credentials()
+    {
+        GivenPreFlightPasses();
+        GivenCreate(Ok);
+        GivenBranch(Ok);
+        GivenRemote(new ProcessExecutionResult(0, "https://x-access-token:SECRET@ghe.corp/org/sub/repo.git\n", string.Empty));
+
+        var result = await ActAsync();
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ProvisioningErrorCodes.RemoteOriginInvalid);
+        result.Error.Message.Should().Be(
+            "The 'origin' remote URL 'https://***@ghe.corp/org/sub/repo.git' could not be parsed into an owner/repo slug.");
+        result.Error.Message.Should().NotContain("SECRET").And.NotContain("x-access-token");
+    }
+
+    [Fact]
+    public async Task RemoteOriginInvalid_message_strips_control_characters()
+    {
+        GivenPreFlightPasses();
+        GivenCreate(Ok);
+        GivenBranch(Ok);
+        GivenRemote(new ProcessExecutionResult(0, "\u001b[2Jbad\u0007remote\n", string.Empty));
+
+        var result = await ActAsync();
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ProvisioningErrorCodes.RemoteOriginInvalid);
+        result.Error.Message.Should().Be("The 'origin' remote URL '[2Jbadremote' could not be parsed into an owner/repo slug.");
+        result.Error.Message.Should().NotContain("\u001b").And.NotContain("\u0007");
+    }
+
+    [Fact]
+    public async Task RemoteOriginInvalid_message_uses_empty_placeholder_when_output_is_only_control_characters()
+    {
+        GivenPreFlightPasses();
+        GivenCreate(Ok);
+        GivenBranch(Ok);
+        GivenRemote(new ProcessExecutionResult(0, "\u001b\u0007\n", string.Empty));
+
+        var result = await ActAsync();
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Be("The 'origin' remote URL '<empty>' could not be parsed into an owner/repo slug.");
+    }
+
     // ----- happy path ----------------------------------------------------------------------
 
     [Fact]

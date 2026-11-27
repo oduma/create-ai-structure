@@ -103,10 +103,11 @@ public sealed class RepositoryBootstrapper : IRepositoryBootstrapper
 
         if (!RemoteOriginSlugParser.TryParse(remote.StandardOutput, out var slug))
         {
-            var rawValue = string.IsNullOrWhiteSpace(remote.StandardOutput) ? EmptyPlaceholder : remote.StandardOutput.Trim();
+            var redacted = RemoteUrlRedactor.Redact(remote.StandardOutput).Trim();
+            var displayValue = redacted.Length == 0 ? EmptyPlaceholder : redacted;
             return Fail(
                 ProvisioningErrorCodes.RemoteOriginInvalid,
-                $"The 'origin' remote URL '{rawValue}' could not be parsed into an owner/repo slug.");
+                $"The 'origin' remote URL '{displayValue}' could not be parsed into an owner/repo slug.");
         }
 
         return Result<RepositoryCloneResult>.Success(new RepositoryCloneResult(repositoryDirectory, slug));

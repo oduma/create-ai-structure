@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using CreateAiStructure.Application.Runtime;
 using CreateAiStructure.Infrastructure.Process;
@@ -13,8 +14,13 @@ public class ProcessRunnerTests
 {
     private const string BareName = "tool";
 
+    private const string DrainTimeoutMessage =
+        "Output capture timed out after the process exited; a child process may still hold the output stream.";
+
     private static readonly string ResolvedPath = Path.Combine(Path.GetTempPath(), "car-runner-tests", "bin", "tool.exe");
     private static readonly string FullyQualifiedPath = Path.Combine(Path.GetTempPath(), "car-runner-tests", "fq", "other.exe");
+    private static readonly string BatchShimPath = Path.Combine(Path.GetTempPath(), "car-runner-tests", "bin", "gh.cmd");
+    private static readonly TimeSpan TinyDrainTimeout = TimeSpan.FromMilliseconds(50);
 
     private readonly IExecutableResolver _resolver = Substitute.For<IExecutableResolver>();
     private readonly IProcessStarter _starter = Substitute.For<IProcessStarter>();
@@ -338,5 +344,280 @@ public class ProcessRunnerTests
         var act = () => CreateRunner().RunAsync(Request(FullyQualifiedPath));
 
         (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(original);
+    }
+
+    // ----- batch-file (.cmd/.bat) argument guard ------------------------------------------
+
+    public static TheoryData<char> UnsafeBatchCharacters() =>
+        ['"', '%', '!', '^', '&', '|', '<', '>', '(', ')', '\r', '\n'];
+
+    [Theory]
+    [MemberData(nameof(UnsafeBatchCharacters))]
+    public async Task Batch_file_with_an_unsafe_argument_character_is_refused_without_starting(char unsafeCharacter)
+    {
+        GivenResolves(BareName, BatchShimPath);
+        var secret = $"value{unsafeCharacter}SECRET";
+
+        var result = await CreateRunner().RunAsync(Request(BareName, null, "safe", secret));
+
+        result.Should().Be(new ProcessExecutionResult(
+            -1,
+            string.Empty,
+            "Argument 1 contains characters that are unsafe to pass to the batch file 'tool'."));
+        result.StandardError.Should().NotContain("SECRET");
+        AssertStarterNotCalled();
+    }
+
+    [Theory]
+    [InlineData("gh.CMD")]
+    [InlineData("gh.Bat")]
+    [InlineData("gh.bat")]
+    [InlineData("gh.cmd")]
+    public async Task Batch_file_detection_is_case_insensitive_for_fully_qualified_paths(string shimName)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "car-runner-tests", "fq", shimName);
+
+        var result = await CreateRunner().RunAsync(Request(path, null, "a&b"));
+
+        result.Should().Be(new ProcessExecutionResult(
+            -1,
+            string.Empty,
+            $"Argument 0 contains characters that are unsafe to pass to the batch file '{path}'."));
+        AssertStarterNotCalled();
+    }
+
+    [Fact]
+    public async Task Batch_file_with_only_safe_arguments_is_started_with_arguments_verbatim()
+    {
+        GivenResolves(BareName, BatchShimPath);
+        GivenStarterReturnsHandle();
+        GivenHandleCompletes(0, "ok", string.Empty);
+        string[] arguments = ["label", "create", "has space", "stage:qa", "a/b", "--force", "v1.2", "x_y", "#5319E7", string.Empty];
+
+        var result = await CreateRunner().RunAsync(Request(BareName, null, arguments));
+
+        result.Should().Be(new ProcessExecutionResult(0, "ok", string.Empty));
+        _captured!.FileName.Should().Be(BatchShimPath);
+        _captured.ArgumentList.Should().Equal(arguments);
+    }
+
+    [Theory]
+    [InlineData("tool.exe")]
+    [InlineData("tool.cmdx")]
+    [InlineData("tool")]
+    [InlineData("cmd.exe")]
+    public async Task Non_batch_executables_accept_batch_metacharacters(string executableName)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "car-runner-tests", "fq", executableName);
+        GivenStarterReturnsHandle();
+        GivenHandleCompletes(0, string.Empty, string.Empty);
+        string[] arguments = ["\"%!^&|<>()\r\n"];
+
+        var result = await CreateRunner().RunAsync(Request(path, null, arguments));
+
+        result.ExitCode.Should().Be(0);
+        _captured!.ArgumentList.Should().Equal(arguments);
+    }
+
+    // ----- output drain after exit --------------------------------------------------------
+
+    private ProcessRunner CreateRunner(TimeSpan drainTimeout) => new(_resolver, _starter, drainTimeout);
+
+    private void GivenExitedWithReads(int exitCode, Task<string> stdout, Task<string> stderr)
+    {
+        _handle.ReadStandardOutputToEndAsync(Arg.Any<CancellationToken>()).Returns(stdout);
+        _handle.ReadStandardErrorToEndAsync(Arg.Any<CancellationToken>()).Returns(stderr);
+        _handle.WaitForExitAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _handle.HasExited.Returns(true);
+        _handle.ExitCode.Returns(exitCode);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-1000)]
+    public void Internal_ctor_throws_when_drain_timeout_is_not_positive(int milliseconds)
+    {
+        var act = () => new ProcessRunner(_resolver, _starter, TimeSpan.FromMilliseconds(milliseconds));
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("outputDrainTimeout");
+    }
+
+    [Fact]
+    public void Internal_ctor_with_drain_timeout_still_guards_null_seams()
+    {
+        var withoutResolver = () => new ProcessRunner(null!, _starter, TinyDrainTimeout);
+        var withoutStarter = () => new ProcessRunner(_resolver, null!, TinyDrainTimeout);
+
+        withoutResolver.Should().Throw<ArgumentNullException>().WithParameterName("resolver");
+        withoutStarter.Should().Throw<ArgumentNullException>().WithParameterName("starter");
+    }
+
+    [Fact]
+    public async Task Drain_timeout_with_both_streams_stuck_returns_exit_code_and_timeout_message()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(0, new TaskCompletionSource<string>().Task, new TaskCompletionSource<string>().Task);
+
+        var result = await CreateRunner(TinyDrainTimeout).RunAsync(Request(FullyQualifiedPath));
+
+        result.Should().Be(new ProcessExecutionResult(0, string.Empty, DrainTimeoutMessage));
+        _handle.DidNotReceive().KillEntireProcessTree();
+        _handle.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task Drain_timeout_keeps_completed_stdout_when_only_stderr_is_stuck()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(7, Task.FromResult("partial out"), new TaskCompletionSource<string>().Task);
+
+        var result = await CreateRunner(TinyDrainTimeout).RunAsync(Request(FullyQualifiedPath));
+
+        result.Should().Be(new ProcessExecutionResult(7, "partial out", DrainTimeoutMessage));
+    }
+
+    [Fact]
+    public async Task Drain_timeout_appends_message_to_completed_stderr_when_only_stdout_is_stuck()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(3, new TaskCompletionSource<string>().Task, Task.FromResult("real error"));
+
+        var result = await CreateRunner(TinyDrainTimeout).RunAsync(Request(FullyQualifiedPath));
+
+        result.Should().Be(new ProcessExecutionResult(3, string.Empty, $"real error{Environment.NewLine}{DrainTimeoutMessage}"));
+    }
+
+    [Fact]
+    public async Task Drain_timeout_treats_faulted_stream_as_empty()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(
+            2,
+            Task.FromException<string>(new IOException("broken pipe")),
+            new TaskCompletionSource<string>().Task);
+
+        var result = await CreateRunner(TinyDrainTimeout).RunAsync(Request(FullyQualifiedPath));
+
+        result.Should().Be(new ProcessExecutionResult(2, string.Empty, DrainTimeoutMessage));
+    }
+
+    [Fact]
+    public async Task Reads_that_complete_within_the_drain_timeout_are_returned()
+    {
+        var stdout = new TaskCompletionSource<string>();
+        var stderr = new TaskCompletionSource<string>();
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(0, stdout.Task, stderr.Task);
+
+        var run = CreateRunner(TimeSpan.FromMinutes(5)).RunAsync(Request(FullyQualifiedPath));
+        stdout.SetResult("late out");
+        stderr.SetResult("late err");
+
+        (await run).Should().Be(new ProcessExecutionResult(0, "late out", "late err"));
+    }
+
+    [Fact]
+    public async Task Read_failure_within_the_drain_timeout_propagates()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(0, Task.FromException<string>(new IOException("broken pipe")), Task.FromResult(string.Empty));
+
+        var act = () => CreateRunner().RunAsync(Request(FullyQualifiedPath));
+
+        await act.Should().ThrowAsync<IOException>().WithMessage("broken pipe");
+        _handle.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task Cancellation_while_draining_output_rethrows_without_killing_an_exited_process()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(0, new TaskCompletionSource<string>().Task, new TaskCompletionSource<string>().Task);
+        using var cts = new CancellationTokenSource();
+
+        var run = CreateRunner(TimeSpan.FromMinutes(5)).RunAsync(Request(FullyQualifiedPath), cts.Token);
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => run).Should().ThrowAsync<OperationCanceledException>();
+        _handle.DidNotReceive().KillEntireProcessTree();
+        _handle.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task Cancellation_while_draining_output_kills_tree_when_process_reports_not_exited()
+    {
+        GivenStarterReturnsHandle();
+        GivenExitedWithReads(0, new TaskCompletionSource<string>().Task, new TaskCompletionSource<string>().Task);
+        _handle.HasExited.Returns(false);
+        using var cts = new CancellationTokenSource();
+
+        var run = CreateRunner(TimeSpan.FromMinutes(5)).RunAsync(Request(FullyQualifiedPath), cts.Token);
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => run).Should().ThrowAsync<OperationCanceledException>();
+        _handle.Received(1).KillEntireProcessTree();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Reads_that_fault_after_the_runner_gave_up_never_raise_UnobservedTaskException(bool viaCancellation)
+    {
+        var marker = new ObjectDisposedException($"car-unobserved-marker-{viaCancellation}");
+        var raised = false;
+        EventHandler<UnobservedTaskExceptionEventArgs> handler = (_, e) =>
+        {
+            if (e.Exception.InnerExceptions.Contains(marker))
+            {
+                raised = true;
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += handler;
+        try
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                await RunThenFaultReadsAsync(marker, viaCancellation);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= handler;
+        }
+
+        raised.Should().BeFalse();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task RunThenFaultReadsAsync(Exception marker, bool viaCancellation)
+    {
+        var stdout = new TaskCompletionSource<string>();
+        var stderr = new TaskCompletionSource<string>();
+        var handle = Substitute.For<IProcessHandle>();
+        handle.ReadStandardOutputToEndAsync(Arg.Any<CancellationToken>()).Returns(_ => stdout.Task);
+        handle.ReadStandardErrorToEndAsync(Arg.Any<CancellationToken>()).Returns(_ => stderr.Task);
+        handle.WaitForExitAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            viaCancellation ? Task.FromException(new OperationCanceledException()) : Task.CompletedTask);
+        handle.HasExited.Returns(true);
+        var starter = Substitute.For<IProcessStarter>();
+        starter.Start(Arg.Any<ProcessStartInfo>()).Returns(handle);
+
+        var run = new ProcessRunner(Substitute.For<IExecutableResolver>(), starter, TinyDrainTimeout)
+            .RunAsync(Request(FullyQualifiedPath));
+        try
+        {
+            await run;
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on the cancellation path.
+        }
+
+        stdout.SetException(marker);
+        stderr.SetException(marker);
     }
 }
