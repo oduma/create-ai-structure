@@ -4,4 +4,19 @@
     <ProjectReference Include="..\CreateAiStructure.Application\CreateAiStructure.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CreateAiStructure.Infrastructure.Tests" />
+  </ItemGroup>
+
+  <!-- Embed every file under templates/ (dotfiles and dot-directories included) with a deterministic,
+       case-exact logical name: templates/<relative/path> using forward slashes on every OS.
+       Stray local files (secrets, IDE user files, build output, OS metadata) are excluded so they are never embedded. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\templates\**\*"
+                      Exclude="..\..\templates\**\.env;..\..\templates\**\*.user;..\..\templates\**\bin\**;..\..\templates\**\obj\**;..\..\templates\**\Thumbs.db;..\..\templates\**\desktop.ini;..\..\templates\**\.DS_Store"
+                      Visible="false">
+      <LogicalName>templates/$([System.String]::Copy('%(RecursiveDir)%(Filename)%(Extension)').Replace('\', '/'))</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
