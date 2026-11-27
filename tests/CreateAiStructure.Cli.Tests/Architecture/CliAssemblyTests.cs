@@ -23,14 +23,28 @@ public class CliAssemblyTests
     }
 
     [Fact]
-    public void Invoking_the_entry_point_returns_exit_code_zero()
+    public async Task Invoking_the_entry_point_with_help_returns_exit_code_zero()
     {
-        var entryPoint = LoadCli().EntryPoint!;
-        object?[]? arguments = entryPoint.GetParameters().Length == 0 ? null : [Array.Empty<string>()];
-
-        var exitCode = entryPoint.Invoke(null, arguments);
+        var exitCode = await InvokeEntryPointAsync("--help");
 
         exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Invoking_the_entry_point_without_arguments_returns_usage_error_exit_code_two()
+    {
+        var exitCode = await InvokeEntryPointAsync();
+
+        exitCode.Should().Be(2);
+    }
+
+    // The C# compiler's synthesized entry point for an async top-level program blocks on the Task<int>
+    // and returns int, while the user-level method returns Task<int>; both shapes are awaited/unwrapped here.
+    private static async Task<int> InvokeEntryPointAsync(params string[] args)
+    {
+        var result = LoadCli().EntryPoint!.Invoke(null, [args]);
+
+        return result is Task<int> task ? await task : (int)result!;
     }
 
     [Fact]
