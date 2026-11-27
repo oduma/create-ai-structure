@@ -10,6 +10,9 @@ namespace CreateAiStructure.Infrastructure.Templates;
 /// a pre-flight phase that validates and renders every file in memory with zero writes, then a write phase.
 /// </summary>
 /// <remarks>
+/// The pre-flight phase rejects unsafe template paths, two template paths that resolve to the same destination
+/// (compared case-insensitively on every OS, <c>TemplateMaterializer.DuplicateDestination</c>), and destinations that
+/// already exist, before any directory is created or any file is written.
 /// All filesystem access goes through <see cref="IFileSystem"/>. Cancellation is never mapped to a failure result:
 /// an <see cref="OperationCanceledException"/> always propagates to the caller.
 /// </remarks>
@@ -17,6 +20,7 @@ public sealed class TemplateMaterializer : ITemplateMaterializer
 {
     private const string TargetDirectoryRequiredCode = "TemplateMaterializer.TargetDirectoryRequired";
     private const string InvalidTargetDirectoryCode = "TemplateMaterializer.InvalidTargetDirectory";
+    private const string DuplicateDestinationCode = "TemplateMaterializer.DuplicateDestination";
     private const string TargetFileAlreadyExistsCode = "TemplateMaterializer.TargetFileAlreadyExists";
     private const string WriteFailedCode = "TemplateMaterializer.WriteFailed";
 
@@ -73,7 +77,10 @@ public sealed class TemplateMaterializer : ITemplateMaterializer
     /// <param name="context">The values used to replace the template tokens.</param>
     /// <param name="targetDirectory">The directory the files are written into.</param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
-    /// <returns>The full paths of the written files in input order, or the first failure encountered.</returns>
+    /// <returns>
+    /// The full paths of the written files in input order, or the first failure encountered. Two paths that resolve to
+    /// the same destination (ignoring case) fail with <c>TemplateMaterializer.DuplicateDestination</c> before any write.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="context"/> is null.</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     internal async Task<Result<IReadOnlyList<string>>> MaterializeAsync(
@@ -101,7 +108,10 @@ public sealed class TemplateMaterializer : ITemplateMaterializer
         }
 
         // Phase A: validate, read and render every file in memory. No directory is created and nothing is written.
+        // Destinations are compared case-insensitively on every OS so that two paths differing only by case can never
+        // both be written (they would collide on case-insensitive filesystems).
         var pendingWrites = new List<(string Destination, string Content)>(relativePaths.Count);
+        var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relativePath in relativePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -110,6 +120,13 @@ public sealed class TemplateMaterializer : ITemplateMaterializer
             if (destination.IsFailure)
             {
                 return Result<IReadOnlyList<string>>.Failure(destination.Error);
+            }
+
+            if (!destinations.Add(destination.Value))
+            {
+                return Fail(
+                    DuplicateDestinationCode,
+                    $"Template path '{relativePath}' resolves to destination '{destination.Value}', which another template path already targets.");
             }
 
             if (_fileSystem.FileExists(destination.Value))

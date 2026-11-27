@@ -17,8 +17,13 @@ internal static class TemplatePathGuard
 
     /// <summary>
     /// Resolves <paramref name="relativePath"/> against <paramref name="normalizedRoot"/>, rejecting unsafe paths.
-    /// Never throws for an unsafe <paramref name="relativePath"/>.
+    /// Unsafe inputs are rejected as a failure result before normalization, so <see cref="Path.GetFullPath(string)"/>
+    /// is only ever called on pre-validated input and is not expected to throw.
     /// </summary>
+    /// <remarks>
+    /// No exception is caught here: an unexpected platform exception from <see cref="Path.GetFullPath(string)"/>
+    /// (for example <see cref="PathTooLongException"/>) propagates to the caller.
+    /// </remarks>
     /// <param name="normalizedRoot">The target root, already normalized via <see cref="Path.GetFullPath(string)"/>.</param>
     /// <param name="relativePath">The forward-slash relative template path.</param>
     /// <returns>The full destination path, or a <c>TemplateMaterializer.UnsafeTemplatePath</c> failure.</returns>

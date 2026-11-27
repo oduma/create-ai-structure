@@ -173,6 +173,48 @@ public class TemplateMaterializerTests
         await _provider.DidNotReceive().ReadTemplateAsync("../escape", Arg.Any<CancellationToken>());
     }
 
+    // ---------------------------------------------------------------- pre-flight: duplicate destinations (internal seam)
+
+    public static TheoryData<string, string> DuplicateDestinationPairs() => new()
+    {
+        { ClaudeTemplatePath, ClaudeTemplatePath },
+        { ClaudeTemplatePath, "claude.md" },
+    };
+
+    [Theory]
+    [MemberData(nameof(DuplicateDestinationPairs))]
+    public async Task MaterializeAsync_fails_with_DuplicateDestination_when_two_paths_resolve_to_the_same_destination_ignoring_case_and_writes_nothing(
+        string firstPath, string secondPath)
+    {
+        // Default mocks: FileExists is false and the provider returns content for every name, so only the
+        // duplicate check can fail this call. The comparison is case-insensitive on every OS.
+        var result = await CreateSut().MaterializeAsync(
+            new[] { firstPath, secondPath },
+            ContextFor(ProjectType.Api),
+            _root,
+            CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("TemplateMaterializer.DuplicateDestination");
+        AssertNoWritesOrDirectories();
+    }
+
+    [Fact]
+    public async Task MaterializeAsync_names_the_duplicate_path_in_the_DuplicateDestination_failure_message()
+    {
+        var result = await CreateSut().MaterializeAsync(
+            new[] { ClaudeTemplatePath, "claude.md" },
+            ContextFor(ProjectType.Api),
+            _root,
+            CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("TemplateMaterializer.DuplicateDestination");
+        result.Error.Message.Should().Match(message =>
+            message.Contains("claude.md", StringComparison.Ordinal)
+            || message.Contains(DestinationOf("claude.md"), StringComparison.Ordinal));
+    }
+
     // ---------------------------------------------------------------- pre-flight: existing target file
 
     [Fact]

@@ -1,4 +1,6 @@
 using System.Reflection;
+using CreateAiStructure.Domain.Scaffolding;
+using CreateAiStructure.Domain.Templates;
 using CreateAiStructure.Tests.Shared;
 using FluentAssertions;
 
@@ -40,6 +42,24 @@ public class EmbeddedTemplateCompilationTests
         EmbeddedTemplateResourceNames().Should().Equal(
             expected,
             "every file under templates/ must be embedded with an ordinal-exact logical name");
+    }
+
+    [Fact]
+    public void Embedded_template_resource_names_exactly_match_the_union_of_all_manifest_files()
+    {
+        // Pins the embedded set to the manifest, so stray untracked files on disk (.DS_Store, Thumbs.db, .env, ...)
+        // that the on-disk comparison would also accept can never be shipped inside the assembly.
+        var expected = ProjectType.All
+            .SelectMany(projectType => TemplateManifest.For(projectType).Files)
+            .Distinct(StringComparer.Ordinal)
+            .Select(path => ResourcePrefix + path)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+        expected.Should().HaveCount(ExpectedTemplateFileCount);
+        EmbeddedTemplateResourceNames().Should().Equal(
+            expected,
+            "the embedded templates/ resources must be exactly the union of every project type's manifest files");
     }
 
     [Theory]
